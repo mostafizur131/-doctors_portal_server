@@ -29,12 +29,57 @@ async function run() {
     const appointmentsCollection = client
       .db("doctorsPortals")
       .collection("appointmentsOptions");
+    const bookingsCollection = client
+      .db("doctorsPortals")
+      .collection("bookings");
 
+    // Use Aggregate to query multiple collection and then merge data
     app.get("/appointments", async (req, res) => {
+      const date = req.query.date;
       const query = {};
       const options = await appointmentsCollection.find(query).toArray();
 
+      //Get the bookings of the provided date
+      const bookingQuery = { appointmentDate: date };
+      const alreadyBooked = await bookingsCollection
+        .find(bookingQuery)
+        .toArray();
+      //Filtering
+      options.forEach((option) => {
+        const optionBooked = alreadyBooked.filter(
+          (book) => book.treatment === option.name
+        );
+        const bookedSlots = optionBooked.map((book) => book.slot);
+        const remainingSlots = option.slots.filter(
+          (slot) => !bookedSlots.includes(slot)
+        );
+        option.slots = remainingSlots;
+      });
       res.send(options);
+    });
+
+    // Bookings Api
+    app.post("/bookings", async (req, res) => {
+      const booking = req.body;
+
+      const query = {
+        appointmentDate: booking.appointmentDate,
+        email: booking.email,
+        treatment: booking.treatment,
+      };
+
+      const alreadyBooked = await bookingsCollection.find(query).toArray();
+
+      if (alreadyBooked.length) {
+        const message = `You have already booked on ${booking.appointmentDate}`;
+        return res.send({
+          acknowledged: false,
+          message,
+        });
+      }
+
+      const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
     });
   } finally {
   }
